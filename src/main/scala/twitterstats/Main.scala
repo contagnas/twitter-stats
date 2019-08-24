@@ -2,6 +2,7 @@ package twitterstats
 
 import cats.effect._
 import cats.implicits._
+import cats.kernel.Semigroup
 import fs2.io.stdout
 import fs2.{Stream, text}
 import io.circe.Json
@@ -18,6 +19,14 @@ import scala.annotation.tailrec
 import scala.concurrent.ExecutionContext.global
 
 private object Main extends IOApp {
+
+  case class TweetStatistics(count: Int)
+
+  implicit val statisticsSemigroup: Semigroup[TweetStatistics] =
+    (x: TweetStatistics, y: TweetStatistics) => TweetStatistics(
+      count = x.count + y.count
+    )
+
   case class Config(
     token: Token,
     consumer: Consumer,
@@ -67,17 +76,19 @@ private object Main extends IOApp {
       token = Some(config.token)
     )
 
-    val tweets: Stream[IO, String] = for {
+    val tweets: Stream[IO, Json] = for {
       client <- BlazeClientBuilder[IO](global).stream
       request <- Stream.eval(request)
       rawTweet <- client.stream(request)
       tweet <- rawTweet.body.chunks.parseJsonStream
-      prettyTweet = tweet.spaces4
-    } yield prettyTweet
+    } yield tweet
 
     val printer: Stream[IO, Unit] = Stream.resource(Blocker[IO]).flatMap {
       blocker =>
         tweets
+          .map(_ => TweetStatistics(count = 1))
+          .scan1(Semigroup[TweetStatistics].combine)
+          .map(_.toString)
           .through(text.utf8Encode)
           .through(stdout(blocker))
     }
