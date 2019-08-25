@@ -4,7 +4,7 @@ import java.time.ZonedDateTime
 
 import cats.effect._
 import cats.implicits._
-import cats.{Semigroup, Show, derived}
+import cats.{Monoid, Show, derived}
 import fs2.Stream
 import fs2.io.stdoutLines
 import io.circe.Json
@@ -12,6 +12,7 @@ import io.circe.jawn.CirceSupportParser
 import org.http4s._
 import org.http4s.client.oauth1
 import org.typelevel.jawn.RawFacade
+import twitterstats.Twitter.Tweet
 
 import scala.concurrent.duration._
 
@@ -32,10 +33,17 @@ private object Main extends IOApp {
     )
 
     case class Stats(
-      hashtags: Map[String, Int],
+      count: Double,
+      hashtags: Map[String, Double]
     )
 
-    implicit val semigroupStats: Semigroup[Stats] = derived.semi.semigroup
+    def tweetToStats(tweet: Tweet): Stats = Stats(
+      count = 1d,
+      hashtags = tweet.hashtags.map(_ -> 1d).toMap
+    )
+
+    implicit val monoidStats: Monoid[Stats] = derived.semi.monoid
+    implicit val showStats: Show[Stats] = derived.semi.show
     implicit val decayableStats: Decayable[Stats] = DeriveDecayable.decayable
 
     val printer: Stream[IO, Unit] = Stream.resource(Blocker[IO]).flatMap {
@@ -43,10 +51,10 @@ private object Main extends IOApp {
         new Twitter[IO].tweetStream(request)
           .map(Twitter.parse)
           .collect { case Right(tweet) => tweet }
-          .scan(WindowedAverage[Double](0, ZonedDateTime.now, 2.seconds))(
-            (avg, tweet) => avg.addValue(1, tweet.timestamp))
+          .scan(WindowedAverage[Stats](Monoid[Stats].empty, ZonedDateTime.now, 2.seconds))(
+            (avg, tweet) => avg.addValue(tweetToStats(tweet), tweet.timestamp))
           .through(stdoutLines(blocker))
-          .take(1)
+          .take(1000)
     }
 
     printer.compile.drain.as(ExitCode.Success)
