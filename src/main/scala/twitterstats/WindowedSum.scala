@@ -14,7 +14,7 @@ import scala.concurrent.duration._
  * @param maxWindow The duration buckets are allowed to stay in the window.
  * @tparam A the type of stats to track
  */
-class WindowedAverage[A: Monoid] private (buckets: Vector[Bucket[A]], maxWindow: Duration) {
+class WindowedSum[A: Monoid] private (buckets: Vector[Bucket[A]], maxWindow: Duration) {
   private def getBucketsInWindowEndingAt(endTime: ZonedDateTime, windowSize: Duration): Vector[Bucket[A]] = {
     val lastIndexInWindow = buckets.lastIndexWhere { bucket =>
       ChronoUnit.SECONDS.between(bucket.timestamp, endTime) < windowSize.toSeconds
@@ -30,8 +30,8 @@ class WindowedAverage[A: Monoid] private (buckets: Vector[Bucket[A]], maxWindow:
   def addValue(
     addedValue: A,
     timestamp: ZonedDateTime,
-  ): WindowedAverage[A] = {
-    val roundedTimestamp = WindowedAverage.roundTimestamp(timestamp)
+  ): WindowedSum[A] = {
+    val roundedTimestamp = WindowedSum.roundTimestamp(timestamp)
     val truncatedBuckets: Vector[Bucket[A]] = getBucketsInWindowEndingAt(roundedTimestamp, maxWindow)
     val headBucket = buckets.head
 
@@ -43,16 +43,16 @@ class WindowedAverage[A: Monoid] private (buckets: Vector[Bucket[A]], maxWindow:
       truncatedBuckets.+:(Bucket(roundedTimestamp, addedValue))
     }
 
-    new WindowedAverage(newBuckets, maxWindow)
+    new WindowedSum(newBuckets, maxWindow)
   }
 }
 
-object WindowedAverage {
+object WindowedSum {
   private val RESOLUTION = 1.second
 
-  def of[A: Monoid](startingValue: A, timestamp: ZonedDateTime, maxWindow: Duration): WindowedAverage[A] = {
+  def of[A: Monoid](startingValue: A, timestamp: ZonedDateTime, maxWindow: Duration): WindowedSum[A] = {
     assert(maxWindow > RESOLUTION, s"max window must be greater than ${RESOLUTION}")
-    new WindowedAverage(Vector(Bucket(roundTimestamp(timestamp), startingValue)), maxWindow)
+    new WindowedSum(Vector(Bucket(roundTimestamp(timestamp), startingValue)), maxWindow)
   }
 
   private def roundTimestamp(timestamp: ZonedDateTime): ZonedDateTime =

@@ -19,7 +19,7 @@ import scala.concurrent.duration._
 private object Main extends IOApp {
 
   implicit val circeSupportParser: RawFacade[Json] = new CirceSupportParser(None, false).facade
-  implicit def showWindowedAverage[A: Show]: Show[WindowedAverage[A]] = (t: WindowedAverage[A]) => t.toString + "\n"
+  implicit def showWindowedAverage[A: Show]: Show[WindowedSum[A]] = (t: WindowedSum[A]) => t.toString + "\n"
 
   def run(args: List[String]): IO[ExitCode] = {
     val config = ArgParser.parseConfig(args)
@@ -33,13 +33,13 @@ private object Main extends IOApp {
     )
 
     case class Stats(
-      count: Double,
-      hashtags: Map[String, Double]
+      count: Int,
+      hashtags: Map[String, Int]
     )
 
     def tweetToStats(tweet: Tweet): Stats = Stats(
-      count = 1d,
-      hashtags = tweet.hashtags.map(_ -> 1d).toMap
+      count = 1,
+      hashtags = tweet.hashtags.map(_ -> 1).toMap
     )
 
     implicit val monoidStats: Monoid[Stats] = derived.semi.monoid
@@ -56,7 +56,7 @@ private object Main extends IOApp {
         new Twitter[IO].tweetStream(request)
           .map(Twitter.parse)
           .collect { case Right(tweet) => tweet }
-          .scan(WindowedAverage.of(Monoid[Stats].empty, ZonedDateTime.now, 1.hour))(
+          .scan(WindowedSum.of(Monoid[Stats].empty, ZonedDateTime.now, 1.hour))(
             (avg, tweet) => avg.addValue(tweetToStats(tweet), tweet.timestamp))
           .map(_.valueForLast(2.seconds))
           .through(stdoutLines(blocker))
