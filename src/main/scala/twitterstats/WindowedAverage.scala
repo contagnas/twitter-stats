@@ -42,7 +42,6 @@ case class WindowedAverage[A: Decayable: Semigroup](
       value = newValue,
       lastTimeStamp = timestamp
     )
-
   }
 }
 
