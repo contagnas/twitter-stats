@@ -47,22 +47,18 @@ private object Main extends IOApp {
       s"""
        |Count: ${t.count}
        |Hashtags: {
-       |  ${t.hashtags.toList.sortBy { case (_, v) => -v }.map { case (k, v) => s"$k -> ${v.ceil.toInt}" }.mkString(",\n  ")}
+       |  ${t.hashtags.toList.sortBy { case (_, v) => -v }.take(5).map { case (k, v) => s"$k -> ${v.ceil.toInt}" }.mkString(",\n  ")}
        |}
        |""".stripMargin
-
-    implicit val decayableStats: Decayable[Stats] = DeriveDecayable.decayable
-    def showWA[A: Show]: Show[WindowedAverage[A]] =
-      (t: WindowedAverage[A]) => Show[A].show(t.value)
 
     val printer: Stream[IO, Unit] = Stream.resource(Blocker[IO]).flatMap {
       blocker =>
         new Twitter[IO].tweetStream(request)
           .map(Twitter.parse)
           .collect { case Right(tweet) => tweet }
-          .scan(WindowedAverage[Stats](Monoid[Stats].empty, ZonedDateTime.now, 1.minute))(
+          .scan(WindowedAverage.of(Monoid[Stats].empty, ZonedDateTime.now, 1.hour))(
             (avg, tweet) => avg.addValue(tweetToStats(tweet), tweet.timestamp))
-          .map(showWA[Stats].show)
+          .map(_.valueForLast(2.seconds))
           .through(stdoutLines(blocker))
           .take(1000)
     }
