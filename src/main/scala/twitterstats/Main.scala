@@ -1,10 +1,10 @@
 package twitterstats
 
-import java.time.LocalDateTime
+import java.time.ZonedDateTime
 
-import cats.Show
 import cats.effect._
 import cats.implicits._
+import cats.{Semigroup, Show, derived}
 import fs2.Stream
 import fs2.io.stdoutLines
 import io.circe.Json
@@ -34,8 +34,10 @@ private object Main extends IOApp {
     val printer: Stream[IO, Unit] = Stream.resource(Blocker[IO]).flatMap {
       blocker =>
         new Twitter[IO].tweetStream(request)
-          .scan(WindowedAverage[Double](0, LocalDateTime.now, 2.seconds))(
-            (avg, _) => avg.addValue(1, LocalDateTime.now))
+          .map(Twitter.parse)
+          .collect { case Right(tweet) => tweet }
+          .scan(WindowedAverage[Double](0, ZonedDateTime.now, 2.seconds))(
+            (avg, tweet) => avg.addValue(1, tweet.timestamp))
           .through(stdoutLines(blocker))
           .take(100)
     }

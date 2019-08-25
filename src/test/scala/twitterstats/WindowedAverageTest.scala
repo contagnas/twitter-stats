@@ -1,6 +1,6 @@
 package twitterstats
 
-import java.time.LocalDateTime
+import java.time.{LocalDateTime, ZoneOffset, ZonedDateTime}
 
 import cats.implicits._
 import org.scalatest.{FlatSpec, Matchers}
@@ -8,29 +8,30 @@ import org.scalatest.{FlatSpec, Matchers}
 import scala.concurrent.duration._
 
 class WindowedAverageTest extends FlatSpec with Matchers {
+  val startTime: ZonedDateTime = ZonedDateTime.of(
+    LocalDateTime.of(2019, 1, 1, 1, 0),
+    ZoneOffset.UTC
+  )
+
   "WindowedAverage" should "handle time gaps greater than the window" in {
-    val startTime = LocalDateTime.of(2019, 1, 1, 1, 0)
     val endTime = startTime.plusMinutes(60)
     val avg = WindowedAverage[Int](100, startTime, 30.seconds)
     avg.addValue(50, endTime).value shouldBe 50
   }
 
   it should "handle out-of-order timestamps outside of window" in {
-    val startTime = LocalDateTime.of(2019, 1, 1, 1, 0)
     val endTime = startTime.plusMinutes(60)
     val avg = WindowedAverage[Int](100, endTime, 30.seconds)
     avg.addValue(50, startTime).value shouldBe 100
   }
 
   it should "handle out-of-order timestamps inside of window" in {
-    val startTime = LocalDateTime.of(2019, 1, 1, 1, 0)
     val endTime = startTime.plusSeconds(15)
     val avg = WindowedAverage[Int](100, endTime, 30.seconds)
     avg.addValue(50, startTime).value shouldBe 150
   }
 
   it should "return reasonable results" in {
-    val startTime = LocalDateTime.of(2019, 1, 1, 1, 0)
     val iterations = 100
     val duration = 30
 
@@ -43,8 +44,7 @@ class WindowedAverageTest extends FlatSpec with Matchers {
     windowedAverage.value shouldEqual duration
   }
 
-  "Adding the same timestamp multiple times" should "be the same as adding it with a large value" in {
-    val startTime = LocalDateTime.of(2019, 1, 1, 1, 0)
+  it should "produce the same result with multiple small values or one large value" in {
     val startingAvg = WindowedAverage[Int](0, startTime, 1.minute)
     val numberOfEvents = 100
     val repeatedAdd = (1 to numberOfEvents).foldLeft(startingAvg) (

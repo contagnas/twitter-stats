@@ -1,6 +1,6 @@
 package twitterstats
 
-import java.time.LocalDateTime
+import java.time.ZonedDateTime
 import java.time.temporal.ChronoUnit
 
 import cats.Semigroup
@@ -18,12 +18,12 @@ import scala.concurrent.duration._
  */
 case class WindowedAverage[A: Decayable: Semigroup](
   value: A,
-  lastTimeStamp: LocalDateTime,
+  lastTimeStamp: ZonedDateTime,
   window: Duration
 ) {
   def addValue(
     addedValue: A,
-    timestamp: LocalDateTime,
+    timestamp: ZonedDateTime,
   ): WindowedAverage[A] = {
     val newValue = if (timestamp.isAfter(lastTimeStamp)) {
       val timeElapsed: Long = lastTimeStamp.until(timestamp, ChronoUnit.MILLIS)
@@ -63,7 +63,7 @@ object Decayable {
 object Decay {
   def addValue(
     nextValue: Int,
-    timestamp: LocalDateTime,
+    timestamp: ZonedDateTime,
     runningAverage: WindowedAverage[Int]
   ): WindowedAverage[Int] = {
     val timeElapsed: Long = runningAverage.lastTimeStamp.until(timestamp, ChronoUnit.SECONDS)
