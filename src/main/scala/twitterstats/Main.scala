@@ -43,16 +43,26 @@ private object Main extends IOApp {
     )
 
     implicit val monoidStats: Monoid[Stats] = derived.semi.monoid
-    implicit val showStats: Show[Stats] = derived.semi.show
+    implicit val showStats: Show[Stats] = (t: Stats) =>
+      s"""
+       |Count: ${t.count}
+       |Hashtags: {
+       |  ${t.hashtags.toList.sortBy { case (_, v) => -v }.map { case (k, v) => s"$k -> ${v.ceil.toInt}" }.mkString(",\n  ")}
+       |}
+       |""".stripMargin
+
     implicit val decayableStats: Decayable[Stats] = DeriveDecayable.decayable
+    def showWA[A: Show]: Show[WindowedAverage[A]] =
+      (t: WindowedAverage[A]) => Show[A].show(t.value)
 
     val printer: Stream[IO, Unit] = Stream.resource(Blocker[IO]).flatMap {
       blocker =>
         new Twitter[IO].tweetStream(request)
           .map(Twitter.parse)
           .collect { case Right(tweet) => tweet }
-          .scan(WindowedAverage[Stats](Monoid[Stats].empty, ZonedDateTime.now, 2.seconds))(
+          .scan(WindowedAverage[Stats](Monoid[Stats].empty, ZonedDateTime.now, 1.minute))(
             (avg, tweet) => avg.addValue(tweetToStats(tweet), tweet.timestamp))
+          .map(showWA[Stats].show)
           .through(stdoutLines(blocker))
           .take(1000)
     }

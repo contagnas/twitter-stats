@@ -48,25 +48,41 @@ case class WindowedAverage[A: Decayable: Semigroup](
 
 trait Decayable[A] {
   def decay(value: A, decayAmount: Double): A
+
+  // value close enough to 0 to evict from the window
+  def gtEpsilon(a: A): Boolean
 }
 
 object Decayable {
   def apply[A: Decayable]: Decayable[A] = implicitly[Decayable[A]]
 
-  def instance[A](func: (A, Double) => A): Decayable[A] =
-    (value: A, decayAmount: Double) => func(value, decayAmount)
+  def instance[A](func: (A, Double) => A, gtEpsi: A => Boolean): Decayable[A] = new Decayable[A] {
+    override def decay(value: A, decayAmount: Double): A = func(value, decayAmount)
+    override def gtEpsilon(a: A): Boolean = gtEpsi(a)
+  }
 
-  implicit val decayableDouble: Decayable[Double] =
-    (value: Double, decayAmount: Double) => value * (1 - decayAmount)
+  implicit val decayableDouble: Decayable[Double] = new Decayable[Double] {
+    override def decay(value: Double, decayAmount: Double): Double =
+      value * (1 - decayAmount)
 
-  implicit val decayableInt: Decayable[Int] =
-    (value: Int, decayAmount: Double) =>
+    override def gtEpsilon(a: Double): Boolean = a > 1E-4
+  }
+
+  implicit val decayableInt: Decayable[Int] = new Decayable[Int] {
+    override def decay(value: Int, decayAmount: Double): Int =
       Decayable[Double].decay(value.toDouble, decayAmount).ceil.toInt
 
-  implicit def decayableMap[K, V: Decayable]: Decayable[Map[K, V]] =
-    (value: Map[K, V], decayAmount: Double) => value.map {
-      case (k, v) => k -> Decayable[V].decay(v, decayAmount)
-    }
+    override def gtEpsilon(a: Int): Boolean = a > 0
+  }
+
+  implicit def decayableMap[K, V: Decayable]: Decayable[Map[K, V]] = new Decayable[Map[K, V]] {
+    override def decay(value: Map[K, V], decayAmount: Double): Map[K, V] =
+      value
+        .map { case (k, v) => k -> Decayable[V].decay(v, decayAmount) }
+        .filter { case (k, v) => Decayable[V].gtEpsilon(v) }
+
+    override def gtEpsilon(a: Map[K, V]): Boolean = a.nonEmpty
+  }
 }
 
 object Decay {
@@ -102,15 +118,29 @@ object MkDecayable extends MkDecayableDerivation {
 }
 
 abstract class MkDecayableDerivation {
-  implicit val mkDecayableHNil: MkDecayable[HNil] = (_, _) => HNil
+  implicit val mkDecayableHNil: MkDecayable[HNil] = new MkDecayable[HNil] {
+    override def decay(value: HNil, decayAmount: Double): HNil = value
+    override def gtEpsilon(a: HNil): Boolean = false
+  }
 
   implicit def mkDecayableGeneric[A, R](implicit A: Generic.Aux[A, R], R: Lazy[MkDecayable[R]]): MkDecayable[A] =
-    instance((x, y) => A.from(R.value.decay(A.to(x), y)))
+    new MkDecayable[A] {
+      override def decay(value: A, decayAmount: Double): A =
+        A.from(R.value.decay(A.to(value), decayAmount))
+
+      override def gtEpsilon(value: A): Boolean =
+        R.value.gtEpsilon(A.to(value))
+    }
 
   implicit def hlistDecayable[H, T <: HList](
     implicit H: Decayable[H] OrElse MkDecayable[H], T: MkDecayable[T]
-  ): MkDecayable[H :: T] = instance { case (hx :: tx, decay) => H.unify.decay(hx, decay) :: T.decay(tx, decay) }
-
-  private def instance[A](f: (A, Double) => A): MkDecayable[A] =
-    (x: A, y: Double) => f(x, y)
+  ): MkDecayable[H :: T] =  new MkDecayable[H :: T] {
+    override def decay(value: H :: T, decayAmount: Double): H :: T =
+      value match {
+        case hx :: tx => H.unify.decay(hx, decayAmount) :: T.decay(tx, decayAmount)
+      }
+    override def gtEpsilon(a: H :: T): Boolean = a match {
+      case hx :: tx => H.unify.gtEpsilon(hx) && T.gtEpsilon(tx)
+    }
+  }
 }
