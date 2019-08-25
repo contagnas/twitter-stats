@@ -31,6 +31,13 @@ private object Main extends IOApp {
       token = Some(config.token)
     )
 
+    case class Stats(
+      hashtags: Map[String, Int],
+    )
+
+    implicit val semigroupStats: Semigroup[Stats] = derived.semi.semigroup
+    implicit val decayableStats: Decayable[Stats] = DeriveDecayable.decayable
+
     val printer: Stream[IO, Unit] = Stream.resource(Blocker[IO]).flatMap {
       blocker =>
         new Twitter[IO].tweetStream(request)
@@ -39,7 +46,7 @@ private object Main extends IOApp {
           .scan(WindowedAverage[Double](0, ZonedDateTime.now, 2.seconds))(
             (avg, tweet) => avg.addValue(1, tweet.timestamp))
           .through(stdoutLines(blocker))
-          .take(100)
+          .take(1)
     }
 
     printer.compile.drain.as(ExitCode.Success)

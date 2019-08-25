@@ -5,6 +5,7 @@ import java.time.temporal.ChronoUnit
 
 import cats.Semigroup
 import cats.implicits._
+import shapeless._
 
 import scala.concurrent.duration._
 
@@ -51,6 +52,10 @@ trait Decayable[A] {
 
 object Decayable {
   def apply[A: Decayable]: Decayable[A] = implicitly[Decayable[A]]
+
+  def instance[A](func: (A, Double) => A): Decayable[A] =
+    (value: A, decayAmount: Double) => func(value, decayAmount)
+
   implicit val decayableDouble: Decayable[Double] =
     (value: Double, decayAmount: Double) => value * (1 - decayAmount)
 
@@ -58,6 +63,10 @@ object Decayable {
     (value: Int, decayAmount: Double) =>
       Decayable[Double].decay(value.toDouble, decayAmount).ceil.toInt
 
+  implicit def decayableMap[K, V: Decayable]: Decayable[Map[K, V]] =
+    (value: Map[K, V], decayAmount: Double) => value.map {
+      case (k, v) => k -> Decayable[V].decay(v, decayAmount)
+    }
 }
 
 object Decay {
@@ -74,4 +83,34 @@ object Decay {
       lastTimeStamp = timestamp
     )
   }
+}
+
+/**
+  * Derive a Decayable instance for a product from the Decayable instances of its members
+  *
+  * This is based on derivations in the kittens project, e.g.:
+  * https://github.com/typelevel/kittens/blob/master/core/src/main/scala/cats/derived/semigroup.scala
+  */
+object DeriveDecayable {
+  def decayable[A](implicit ev: Lazy[MkDecayable[A]]): Decayable[A] = ev.value
+}
+
+trait MkDecayable[A] extends Decayable[A]
+
+object MkDecayable extends MkDecayableDerivation {
+  def apply[A](implicit ev: MkDecayable[A]): MkDecayable[A] = ev
+}
+
+abstract class MkDecayableDerivation {
+  implicit val mkDecayableHNil: MkDecayable[HNil] = (_, _) => HNil
+
+  implicit def mkDecayableGeneric[A, R](implicit A: Generic.Aux[A, R], R: Lazy[MkDecayable[R]]): MkDecayable[A] =
+    instance((x, y) => A.from(R.value.decay(A.to(x), y)))
+
+  implicit def hlistDecayable[H, T <: HList](
+    implicit H: Decayable[H] OrElse MkDecayable[H], T: MkDecayable[T]
+  ): MkDecayable[H :: T] = instance { case (hx :: tx, decay) => H.unify.decay(hx, decay) :: T.decay(tx, decay) }
+
+  private def instance[A](f: (A, Double) => A): MkDecayable[A] =
+    (x: A, y: Double) => f(x, y)
 }
