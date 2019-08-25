@@ -1,10 +1,12 @@
 package twitterstats
 
+import java.time.LocalDateTime
+
+import cats.Show
 import cats.effect._
 import cats.implicits._
-import cats.kernel.Semigroup
-import fs2.io.stdout
-import fs2.{Stream, text}
+import fs2.Stream
+import fs2.io.stdoutLines
 import io.circe.Json
 import io.circe.jawn.CirceSupportParser
 import jawnfs2._
@@ -17,15 +19,9 @@ import org.typelevel.jawn.RawFacade
 
 import scala.annotation.tailrec
 import scala.concurrent.ExecutionContext.global
+import scala.concurrent.duration._
 
 private object Main extends IOApp {
-
-  case class TweetStatistics(count: Int)
-
-  implicit val statisticsSemigroup: Semigroup[TweetStatistics] =
-    (x: TweetStatistics, y: TweetStatistics) => TweetStatistics(
-      count = x.count + y.count
-    )
 
   case class Config(
     token: Token,
@@ -64,6 +60,7 @@ private object Main extends IOApp {
   }
 
   implicit val circeSupportParser: RawFacade[Json] = new CirceSupportParser(None, false).facade
+  implicit def showWindowedAverage[A: Show]: Show[WindowedAverage[A]] = (t: WindowedAverage[A]) => t.toString + "\n"
 
   def run(args: List[String]): IO[ExitCode] = {
     val config = parseConfig(args)
@@ -86,11 +83,10 @@ private object Main extends IOApp {
     val printer: Stream[IO, Unit] = Stream.resource(Blocker[IO]).flatMap {
       blocker =>
         tweets
-          .map(_ => TweetStatistics(count = 1))
-          .scan1(Semigroup[TweetStatistics].combine)
-          .map(_.toString)
-          .through(text.utf8Encode)
-          .through(stdout(blocker))
+          .scan(WindowedAverage[Double](0, LocalDateTime.now, 2.seconds))(
+            (avg, _) => avg.addValue(1, LocalDateTime.now))
+          .through(stdoutLines(blocker))
+          .take(1000)
     }
 
     printer.compile.drain.as(ExitCode.Success)
