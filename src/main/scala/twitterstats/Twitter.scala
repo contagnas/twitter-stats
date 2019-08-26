@@ -1,16 +1,17 @@
 package twitterstats
 
-import java.time.{LocalDateTime, ZonedDateTime}
+import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 
 import cats.effect.ConcurrentEffect
+import cats.implicits._
 import fs2.Stream
 import io.circe.generic.AutoDerivation
-import io.circe.{Decoder, DecodingFailure, Json}
 import io.circe.jawn.CirceSupportParser
+import io.circe.{Decoder, DecodingFailure, Json}
 import jawnfs2._
-import org.http4s.{Request, Uri}
 import org.http4s.client.blaze.BlazeClientBuilder
+import org.http4s.{Request, Uri}
 import org.typelevel.jawn.RawFacade
 
 import scala.concurrent.ExecutionContext.global
@@ -32,7 +33,13 @@ object Twitter extends AutoDerivation {
     timestamp: ZonedDateTime,
     text: String,
     hashtags: List[String],
-    urls: List[Uri]
+    urls: List[Uri],
+    mediaUrls: List[MediaUrl]
+  )
+
+  case class MediaUrl(
+    url: Uri,
+    mediaType: String
   )
 
   import DecodingTarget._
@@ -70,7 +77,9 @@ object Twitter extends AutoDerivation {
           timestamp = fromJson.created_at,
           text = preferExtended(fromJson)(_.full_text, _.text),
           hashtags = preferExtended(fromJson)(_.entities.hashtags, _.entities.hashtags).map(_.text),
-          urls = preferExtended(fromJson)(_.entities.urls, _.entities.urls).map(_.expanded_url)
+          urls = preferExtended(fromJson)(_.entities.urls, _.entities.urls).map(_.expanded_url),
+          mediaUrls = preferExtended(fromJson)(_.extended_entities, _.extended_entities)
+            .map(_.media).sequence.flatten.map(m => MediaUrl(m.media_url, m.`type`))
         )
       }
     )
@@ -90,19 +99,30 @@ object Twitter extends AutoDerivation {
 
     case class Entities(
       hashtags: List[Hashtag],
-      urls: List[Url]
+      urls: List[Url],
+    )
+
+    case class ExtendedEntities(
+      media: List[Media]
     )
 
     case class ExtendedTweet(
       full_text: String,
-      entities: Entities
+      entities: Entities,
+      extended_entities: Option[ExtendedEntities],
+    )
+
+    case class Media(
+      media_url: Uri,
+      `type`: String
     )
 
     case class RawTweet(
       created_at: ZonedDateTime,
       text: String,
       entities: Entities,
-      extended_tweet: Option[ExtendedTweet]
+      extended_entities: Option[ExtendedEntities],
+      extended_tweet: Option[ExtendedTweet],
     )
   }
 }

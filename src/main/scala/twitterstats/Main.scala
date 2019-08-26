@@ -37,14 +37,21 @@ private object Main extends IOApp {
       count: Int,
       hashtags: Map[String, Int],
       tweetsContainingUrls: Int,
-      domains: Map[Host, Int]
+      domains: Map[Host, Int],
+      mediaTypes: Map[String, Int],
+      mediaDomains: Map[Host, Int],
     )
+
+    def count[A](as: List[A]): Map[A, Int] = as.groupBy(identity)
+      .map { case (k, vs) => k -> vs.length}
 
     def tweetToStats(tweet: Tweet): Stats = Stats(
       count = 1,
-      hashtags = tweet.hashtags.map(_ -> 1).toMap,
+      hashtags = count(tweet.hashtags),
       tweetsContainingUrls = if (tweet.urls.nonEmpty) 1 else 0,
-      domains = tweet.urls.flatMap(_.host).map(_ -> 1).toMap
+      domains = count(tweet.urls.flatMap(_.host)),
+      mediaTypes = count(tweet.mediaUrls.map(_.mediaType)),
+      mediaDomains = count(tweet.mediaUrls.flatMap(_.url.host))
     )
 
     implicit val monoidStats: Monoid[Stats] = derived.semi.monoid
@@ -56,6 +63,8 @@ private object Main extends IOApp {
        |}
        |Contain Urls: ${t.tweetsContainingUrls}
        |Domains: ${t.domains}
+       |Media Domains: ${t.mediaDomains}
+       |Media Types: ${t.mediaTypes}
        |""".stripMargin
 
     val printer: Stream[IO, Unit] = Stream.resource(Blocker[IO]).flatMap {
