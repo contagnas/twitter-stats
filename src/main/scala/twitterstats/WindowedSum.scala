@@ -15,35 +15,44 @@ import scala.concurrent.duration._
  * @tparam A the type of stats to track
  */
 class WindowedSum[A: Monoid] private (buckets: Vector[Bucket[A]], maxWindow: Duration) {
-  private def getBucketsInWindowEndingAt(endTime: ZonedDateTime, windowSize: Duration): Vector[Bucket[A]] = {
-    val lastIndexInWindow = buckets.lastIndexWhere { bucket =>
-      ChronoUnit.SECONDS.between(bucket.timestamp, endTime) < windowSize.toSeconds
-    }
-    buckets.take(lastIndexInWindow + 1)
-  }
-
   val lastTimestamp: ZonedDateTime = buckets.head.timestamp
 
   def valueForLast(duration: Duration, now: ZonedDateTime = lastTimestamp): A =
-    Monoid[A].combineAll(getBucketsInWindowEndingAt(now, duration).map(_.value))
+    Monoid[A].combineAll(
+      getBucketsForWindowEndingAt(WindowedSum.roundTimestamp(now), duration)
+        .map(_.value)
+    )
 
-  def addValue(
-    addedValue: A,
-    timestamp: ZonedDateTime,
-  ): WindowedSum[A] = {
+  def addValue(valueToAdd: A, timestamp: ZonedDateTime): WindowedSum[A] = {
     val roundedTimestamp = WindowedSum.roundTimestamp(timestamp)
-    val truncatedBuckets: Vector[Bucket[A]] = getBucketsInWindowEndingAt(roundedTimestamp, maxWindow)
-    val headBucket = buckets.head
 
-    val newBuckets = if (headBucket.timestamp.toInstant.equals(roundedTimestamp.toInstant)) {
-      val newHead = headBucket.copy(value = headBucket.value |+| addedValue)
-      val tailBuckets: Vector[Bucket[A]] = truncatedBuckets.tail
-      tailBuckets.+:(newHead)
-    } else {
-      truncatedBuckets.+:(Bucket(roundedTimestamp, addedValue))
-    }
+    // slide the buckets to this value
+    val adjustedBucketWindow = getBucketsForWindowEndingAt(roundedTimestamp, maxWindow)
+
+    // The values might not come in order, so put this in the correct bucket.
+    // Since each bucket is one second, the seconds before the latest timestamp is the index
+    val index = ChronoUnit.SECONDS.between(roundedTimestamp, adjustedBucketWindow.head.timestamp).toInt
+
+    val newBuckets = adjustedBucketWindow.get(index)
+      .map(bucket => adjustedBucketWindow.updated(index, bucket.copy(value = bucket.value |+| valueToAdd)))
+      .getOrElse(adjustedBucketWindow)
 
     new WindowedSum(newBuckets, maxWindow)
+  }
+
+  private def getBucketsForWindowEndingAt(endTime: ZonedDateTime, windowSize: Duration): Vector[Bucket[A]] = {
+    val roundedEndTime = WindowedSum.roundTimestamp(endTime)
+
+    val secondDiff = ChronoUnit.SECONDS.between(lastTimestamp, endTime).toInt
+
+    // Only slide forward in time, don't slide more than is needed to replace all buckets
+    val slideAmount = math.min(buckets.length, math.max(0, secondDiff))
+
+    val newBuckets = (0 until slideAmount)
+      .map(s => Bucket(timestamp = endTime.minusSeconds(s), value = Monoid[A].empty))
+      .toVector
+
+    (newBuckets ++ buckets.dropRight(slideAmount)).take(windowSize.toSeconds.toInt)
   }
 }
 
@@ -51,8 +60,14 @@ object WindowedSum {
   private val RESOLUTION = 1.second
 
   def of[A: Monoid](startingValue: A, timestamp: ZonedDateTime, maxWindow: Duration): WindowedSum[A] = {
-    assert(maxWindow > RESOLUTION, s"max window must be greater than ${RESOLUTION}")
-    new WindowedSum(Vector(Bucket(roundTimestamp(timestamp), startingValue)), maxWindow)
+    assert(maxWindow > RESOLUTION, s"max window must be greater than $RESOLUTION")
+    val roundedTimestamp = roundTimestamp(timestamp)
+    val buckets: Vector[Bucket[A]] = (1 until (maxWindow / RESOLUTION).toInt).map {
+      s => Bucket(roundedTimestamp.minusSeconds(s), Monoid.empty[A])
+    }.toVector
+
+    val initialBucket = Bucket(roundedTimestamp, startingValue)
+    new WindowedSum(buckets.+:(initialBucket), maxWindow)
   }
 
   private def roundTimestamp(timestamp: ZonedDateTime): ZonedDateTime =
