@@ -9,7 +9,7 @@ import io.circe.generic.AutoDerivation
 import io.circe.{Decoder, DecodingFailure, Json}
 import io.circe.jawn.CirceSupportParser
 import jawnfs2._
-import org.http4s.Request
+import org.http4s.{Request, Uri}
 import org.http4s.client.blaze.BlazeClientBuilder
 import org.typelevel.jawn.RawFacade
 
@@ -32,7 +32,7 @@ object Twitter extends AutoDerivation {
     timestamp: ZonedDateTime,
     text: String,
     hashtags: List[String],
-    urls: List[String]
+    urls: List[Uri]
   )
 
   import DecodingTarget._
@@ -57,6 +57,13 @@ object Twitter extends AutoDerivation {
       .map(getExtended)
       .getOrElse(getRegular(rawTweet))
 
+    implicit val parseUri: Decoder[Uri] = Decoder[String].emap { s =>
+       Uri.fromString(s) match {
+         case Left(error) => Left(error.message)
+         case Right(uri) => Right(uri)
+       }
+    }
+
     json.as[RawTweet].map(
       fromJson => {
         Tweet(
@@ -79,7 +86,7 @@ object Twitter extends AutoDerivation {
       Decoder.decodeString.map(ZonedDateTime.parse(_, formatter))
 
     case class Hashtag(text: String)
-    case class Url(expanded_url: String)
+    case class Url(expanded_url: Uri)
 
     case class Entities(
       hashtags: List[Hashtag],
