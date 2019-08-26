@@ -9,6 +9,7 @@ import fs2.Stream
 import fs2.io.stdoutLines
 import io.circe.Json
 import io.circe.jawn.CirceSupportParser
+import org.http4s.Uri.Host
 import org.http4s._
 import org.http4s.client.oauth1
 import org.typelevel.jawn.RawFacade
@@ -34,12 +35,16 @@ private object Main extends IOApp {
 
     case class Stats(
       count: Int,
-      hashtags: Map[String, Int]
+      hashtags: Map[String, Int],
+      tweetsContainingUrls: Int,
+      domains: Map[Host, Int]
     )
 
     def tweetToStats(tweet: Tweet): Stats = Stats(
       count = 1,
-      hashtags = tweet.hashtags.map(_ -> 1).toMap
+      hashtags = tweet.hashtags.map(_ -> 1).toMap,
+      tweetsContainingUrls = if (tweet.urls.nonEmpty) 1 else 0,
+      domains = tweet.urls.flatMap(_.host).map(_ -> 1).toMap
     )
 
     implicit val monoidStats: Monoid[Stats] = derived.semi.monoid
@@ -49,6 +54,8 @@ private object Main extends IOApp {
        |Hashtags: {
        |  ${t.hashtags.toList.sortBy { case (_, v) => -v }.take(5).map { case (k, v) => s"$k -> ${v.ceil.toInt}" }.mkString(",\n  ")}
        |}
+       |Contain Urls: ${t.tweetsContainingUrls}
+       |Domains: ${t.domains}
        |""".stripMargin
 
     val printer: Stream[IO, Unit] = Stream.resource(Blocker[IO]).flatMap {
@@ -58,7 +65,7 @@ private object Main extends IOApp {
           .collect { case Right(tweet) => tweet }
           .scan(WindowedSum.of(Monoid[Stats].empty, ZonedDateTime.now, 1.hour))(
             (avg, tweet) => avg.addValue(tweetToStats(tweet), tweet.timestamp))
-          .map(_.valueForLast(2.seconds))
+          .map(_.valueForLast(30.seconds))
           .through(stdoutLines(blocker))
           .take(1000)
     }
