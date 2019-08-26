@@ -3,6 +3,7 @@ package twitterstats
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 
+import cats.Show
 import cats.effect.ConcurrentEffect
 import cats.implicits._
 import fs2.Stream
@@ -37,9 +38,27 @@ object Twitter extends AutoDerivation {
     mediaUrls: List[MediaUrl]
   )
 
+  sealed trait TweetMedia
+
+  object TweetMedia {
+    case object Photo extends TweetMedia
+    case object Video extends TweetMedia
+    case object AnimatedGif extends TweetMedia
+
+    implicit val mediaTypeDecoder: Decoder[TweetMedia] =
+      Decoder[String].emap {
+        case "photo" => Right(Photo)
+        case "video" => Right(Video)
+        case "animated_gif" => Right(AnimatedGif)
+        case wtf => Left(s"Unrecognized media type: $wtf")
+      }
+
+    implicit val mediaTypeShow: Show[TweetMedia] = _.toString
+  }
+
   case class MediaUrl(
     url: Uri,
-    mediaType: String
+    mediaType: TweetMedia
   )
 
   import DecodingTarget._
@@ -65,10 +84,10 @@ object Twitter extends AutoDerivation {
       .getOrElse(getRegular(rawTweet))
 
     implicit val parseUri: Decoder[Uri] = Decoder[String].emap { s =>
-       Uri.fromString(s) match {
-         case Left(error) => Left(error.message)
-         case Right(uri) => Right(uri)
-       }
+      Uri.fromString(s) match {
+        case Left(error) => Left(error.message)
+        case Right(uri) => Right(uri)
+      }
     }
 
     json.as[RawTweet].map(
@@ -114,7 +133,7 @@ object Twitter extends AutoDerivation {
 
     case class Media(
       media_url: Uri,
-      `type`: String
+      `type`: TweetMedia
     )
 
     case class RawTweet(
