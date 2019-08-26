@@ -5,6 +5,7 @@ import java.time.ZonedDateTime
 import cats.effect._
 import cats.implicits._
 import cats.{Monoid, Show, derived}
+import com.vdurmont.emoji.EmojiParser
 import fs2.Stream
 import fs2.io.stdoutLines
 import io.circe.Json
@@ -16,6 +17,7 @@ import org.typelevel.jawn.RawFacade
 import twitterstats.Twitter.{Tweet, TweetMedia}
 
 import scala.concurrent.duration._
+import scala.collection.JavaConverters._
 
 private object Main extends IOApp {
 
@@ -26,23 +28,26 @@ private object Main extends IOApp {
     hashtags: Map[String, Int],
     tweetsWithUrls: Int,
     tweetsWithPhotos: Int,
+    tweetsWithEmojis: Int,
     domains: Map[Host, Int],
     mediaTypes: Map[TweetMedia, Int],
     mediaDomains: Map[Host, Int],
+    emoji: Map[String, Int]
   )
 
-  def count[A](as: List[A]): Map[A, Int] = as.groupBy(identity)
-    .map { case (k, vs) => k -> vs.length }
-
+  def count[A](as: Iterable[A]): Map[A, Int] = as.groupBy(identity)
+    .map { case (k, vs) => k -> vs.size }
 
   def tweetToStats(tweet: Tweet): Stats = Stats(
     count = 1,
     hashtags = count(tweet.hashtags),
     tweetsWithUrls = if (tweet.urls.nonEmpty) 1 else 0,
     tweetsWithPhotos = if (tweet.mediaUrls.exists(_.mediaType == TweetMedia.Photo)) 1 else 0,
+    tweetsWithEmojis = if (EmojiParser.extractEmojis(tweet.text).isEmpty) 0 else 1,
     domains = count(tweet.urls.flatMap(_.host)),
     mediaTypes = count(tweet.mediaUrls.map(_.mediaType)),
-    mediaDomains = count(tweet.mediaUrls.flatMap(_.url.host))
+    mediaDomains = count(tweet.mediaUrls.flatMap(_.url.host)),
+    emoji = count(EmojiParser.extractEmojis(tweet.text).asScala)
   )
 
   implicit val monoidStats: Monoid[Stats] = derived.semi.monoid
@@ -63,10 +68,12 @@ private object Main extends IOApp {
        |count = ${t.count.show}
        |tweetsWithUrls = ${t.tweetsWithUrls.show}
        |tweetsWithPhotos = ${t.tweetsWithPhotos.show}
+       |tweetsWithEmojis = ${t.tweetsWithEmojis.show}
        |hashtags = {${t.hashtags.show}}
        |domains = {${t.domains.show}}
        |mediaTypes = {${t.mediaTypes.show}}
        |mediaDomains = {${t.mediaDomains.show}}
+       |emoji = {${t.emoji.show}}
       """.stripMargin
 
 
@@ -85,12 +92,6 @@ private object Main extends IOApp {
       blocker =>
         new Twitter[IO].tweetStream(request)
           .map(Twitter.parse)
-          .map {
-            case l@Left(err) =>
-              println(err.getMessage)
-              l
-            case r => r
-          }
           .collect { case Right(tweet) => tweet }
           .scan(WindowedSum.of(Monoid[Stats].empty, ZonedDateTime.now, 1.hour))(
             (avg, tweet) => avg.addValue(tweetToStats(tweet), tweet.timestamp))
