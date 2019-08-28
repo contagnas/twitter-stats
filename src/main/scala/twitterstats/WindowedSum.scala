@@ -8,21 +8,27 @@ import cats.implicits._
 
 import scala.concurrent.duration._
 
+trait WindowedSumSlice[A] {
+  val value: A
+  val lastTimestamp: ZonedDateTime
+  val firstTimestamp: ZonedDateTime
+}
+
 /**
  *  Track stats over a sliding window. Timestamps are dropped into buckets with a 1-second resolution
  * @param buckets buckets for each second recorded
  * @param maxWindow The duration buckets are allowed to stay in the window.
  * @tparam A the type of stats to track
  */
-class WindowedSum[A: Monoid] private (buckets: Vector[Bucket[A]], maxWindow: Duration) {
-  val lastTimestamp: ZonedDateTime = buckets.head.timestamp
-  lazy val firstTimestamp: ZonedDateTime = buckets.find(_.value != Monoid.empty[A])
+class WindowedSum[A: Monoid] private (buckets: Vector[Bucket[A]], maxWindow: Duration) extends WindowedSumSlice[A] {
+  override val lastTimestamp: ZonedDateTime = buckets.head.timestamp
+  override lazy val firstTimestamp: ZonedDateTime = buckets.find(_.value != Monoid.empty[A])
     .map(_.timestamp)
     .getOrElse(lastTimestamp)
 
-  def value: A = Monoid[A].combineAll(buckets.map(_.value))
+  override lazy val value: A = Monoid[A].combineAll(buckets.map(_.value))
 
-  def shrinkWindowTo(duration: Duration, endTime: ZonedDateTime = lastTimestamp): WindowedSum[A] =
+  def shrinkWindowTo(duration: Duration, endTime: ZonedDateTime = lastTimestamp): WindowedSumSlice[A] =
     new WindowedSum(
       getBucketsForWindowEndingAt(WindowedSum.roundTimestamp(endTime), duration),
       maxWindow
@@ -77,7 +83,6 @@ object WindowedSum {
 
   private def roundTimestamp(timestamp: ZonedDateTime): ZonedDateTime =
     timestamp.truncatedTo(ChronoUnit.SECONDS)
-
 }
 
 private case class Bucket[A](timestamp: ZonedDateTime, value: A)
