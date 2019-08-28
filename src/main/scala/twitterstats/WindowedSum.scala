@@ -22,7 +22,9 @@ trait WindowedSumSlice[A] {
  */
 class WindowedSum[A: Monoid] private (buckets: Vector[Bucket[A]], maxWindow: Duration) extends WindowedSumSlice[A] {
   override val lastTimestamp: ZonedDateTime = buckets.head.timestamp
-  override lazy val firstTimestamp: ZonedDateTime = buckets.find(_.value != Monoid.empty[A])
+  override lazy val firstTimestamp: ZonedDateTime = buckets
+    .reverse
+    .find(_.value != Monoid.empty[A])
     .map(_.timestamp)
     .getOrElse(lastTimestamp)
 
