@@ -16,11 +16,16 @@ import scala.concurrent.duration._
  */
 class WindowedSum[A: Monoid] private (buckets: Vector[Bucket[A]], maxWindow: Duration) {
   val lastTimestamp: ZonedDateTime = buckets.head.timestamp
+  lazy val firstTimestamp: ZonedDateTime = buckets.find(_.value != Monoid.empty[A])
+    .map(_.timestamp)
+    .getOrElse(lastTimestamp)
 
-  def valueForLast(duration: Duration, now: ZonedDateTime = lastTimestamp): A =
-    Monoid[A].combineAll(
-      getBucketsForWindowEndingAt(WindowedSum.roundTimestamp(now), duration)
-        .map(_.value)
+  def value: A = Monoid[A].combineAll(buckets.map(_.value))
+
+  def shrinkWindowTo(duration: Duration, endTime: ZonedDateTime = lastTimestamp): WindowedSum[A] =
+    new WindowedSum(
+      getBucketsForWindowEndingAt(WindowedSum.roundTimestamp(endTime), duration),
+      maxWindow
     )
 
   def addValue(valueToAdd: A, timestamp: ZonedDateTime): WindowedSum[A] = {
@@ -72,6 +77,7 @@ object WindowedSum {
 
   private def roundTimestamp(timestamp: ZonedDateTime): ZonedDateTime =
     timestamp.truncatedTo(ChronoUnit.SECONDS)
+
 }
 
 private case class Bucket[A](timestamp: ZonedDateTime, value: A)

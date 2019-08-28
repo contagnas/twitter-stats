@@ -3,13 +3,12 @@ package twitterstats
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 
-import cats.Show
 import cats.effect.ConcurrentEffect
 import cats.implicits._
 import fs2.Stream
 import io.circe.generic.AutoDerivation
 import io.circe.jawn.CirceSupportParser
-import io.circe.{Decoder, DecodingFailure, Json}
+import io.circe.{Decoder, DecodingFailure, Encoder, Json}
 import jawnfs2._
 import org.http4s.client.blaze.BlazeClientBuilder
 import org.http4s.{Request, Uri}
@@ -53,7 +52,7 @@ object Twitter extends AutoDerivation {
         case wtf => Left(s"Unrecognized media type: $wtf")
       }
 
-    implicit val mediaTypeShow: Show[TweetMedia] = _.toString
+    implicit val mediaTypeEncoder: Encoder[TweetMedia] = Encoder[String].contramap(_.toString)
   }
 
   case class MediaUrl(
