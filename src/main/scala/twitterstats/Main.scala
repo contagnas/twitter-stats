@@ -50,7 +50,7 @@ private object Main extends IOApp {
     val program = for {
       signal <- Stream.eval(SignallingRef[IO, WindowedSum[TweetStats]](windowedSum))
       tweetStream: Stream[IO, WindowedSum[TweetStats]] = streamTweetsToSignal(signal, request).drain
-      server = runServer(new TwitterStatsApi(signal, Clock[IO]).routes)
+      server = runServer(new TwitterStatsApi(signal).routes)
       stream <- tweetStream.merge(server)
     } yield stream
 
