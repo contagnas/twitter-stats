@@ -1,7 +1,7 @@
 package twitterstats
 
+import java.time.ZonedDateTime
 import java.time.temporal.ChronoUnit
-import java.time.{Instant, ZonedDateTime}
 
 import cats.effect._
 import fs2.concurrent.Signal
@@ -15,10 +15,7 @@ import twitterstats.Twitter.TweetMedia
 
 import scala.concurrent.duration._
 
-class TwitterStatsApi(
-  tweetSignal: Signal[IO, WindowedSum[TweetStats]],
-  clock: Clock[IO]
-) extends Http4sDsl[IO] {
+class TwitterStatsApi(tweetSignal: Signal[IO, WindowedSum[TweetStats]]) extends Http4sDsl[IO] {
 
   case class Seconds(get: Duration)
 
@@ -33,22 +30,17 @@ class TwitterStatsApi(
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
     case GET -> Root / "twitterStats" :? SecondsQueryParamDecoderMatcher(seconds) +& ListLimitQueryParam(limit) =>
       Ok {
-        for {
-          tweet <- tweetSignal.get
-          statsResponse <- generateResponse(tweet, limit, seconds.get, clock)
-        } yield statsResponse
+        tweetSignal.get
+          .map(tweetStats => generateResponse(tweetStats, limit, seconds.get))
       }
   }
 
   def generateResponse(
     tweetStats: WindowedSum[TweetStats],
     inputLimit: Option[Int],
-    duration: Duration, clock: Clock[IO]
-  ): IO[TweetStatsResponse] = clock.realTime(MILLISECONDS)
-    .map(Instant.ofEpochMilli)
-    .map(m => ZonedDateTime.ofInstant(m, java.time.Clock.systemDefaultZone.getZone))
-    .map { windowEnd =>
-      val window = tweetStats.shrinkWindowTo(duration, windowEnd)
+    duration: Duration
+  ): TweetStatsResponse = {
+      val window = tweetStats.shrinkWindowTo(duration)
       val stats = window.value
       val limit = inputLimit.getOrElse(100)
 
@@ -57,20 +49,22 @@ class TwitterStatsApi(
         .sortBy(-1 * _.count)
         .take(limit)
 
+      def percent(value: Int): Double = 100.0 * value / math.max(stats.count, 1)
+
       TweetStatsResponse(
         secondsElapsed = ChronoUnit.SECONDS.between(window.firstTimestamp, window.lastTimestamp),
         count = stats.count,
         hashtags = sortCount(stats.hashtags),
         domains = sortCount(stats.domains),
         tweetsWithUrls = stats.tweetsWithUrls,
-        percentWithUrls = stats.tweetsWithUrls.toDouble / stats.count,
+        percentWithUrls = percent(stats.tweetsWithUrls),
         tweetsWithPhotos = stats.tweetsWithPhotos,
-        percentWithPhotos = stats.tweetsWithPhotos.toDouble / stats.count,
+        percentWithPhotos = percent(stats.tweetsWithPhotos),
         mediaTypes = sortCount(stats.mediaTypes),
         mediaDomains = sortCount(stats.mediaDomains),
         emojis = sortCount(stats.emojis),
         tweetsWithEmojis = stats.tweetsWithEmojis,
-        percentWithEmojis = stats.tweetsWithEmojis.toDouble / stats.count,
+        percentWithEmojis = percent(stats.tweetsWithEmojis),
         firstTweetInWindow = window.firstTimestamp,
         lastTweetInWindow = window.lastTimestamp,
       )
@@ -82,17 +76,17 @@ case class Count[A](name: A, count: Int)
 case class TweetStatsResponse(
   secondsElapsed: Long,
   count: Int,
-  hashtags: List[Count[String]],
-  domains: List[Count[Host]],
+  firstTweetInWindow: ZonedDateTime,
+  lastTweetInWindow: ZonedDateTime,
   tweetsWithUrls: Int,
   percentWithUrls: Double,
   tweetsWithPhotos: Int,
   percentWithPhotos: Double,
+  tweetsWithEmojis: Int,
+  percentWithEmojis: Double,
+  hashtags: List[Count[String]],
+  domains: List[Count[Host]],
   mediaTypes: List[Count[TweetMedia]],
   mediaDomains: List[Count[Host]],
   emojis: List[Count[String]],
-  tweetsWithEmojis: Int,
-  percentWithEmojis: Double,
-  firstTweetInWindow: ZonedDateTime,
-  lastTweetInWindow: ZonedDateTime,
 )
