@@ -1,10 +1,12 @@
 package twitterstats
 
+import java.util.Locale
+
 import cats.{Monoid, derived}
-import cats.implicits._
 import com.vdurmont.emoji.EmojiParser
 import org.http4s.Uri.Host
 import twitterstats.Twitter.{Tweet, TweetMedia}
+import cats.implicits._
 
 import scala.collection.JavaConverters._
 
@@ -17,7 +19,8 @@ case class TweetStats(
   domains: Map[Host, Int],
   mediaTypes: Map[TweetMedia, Int],
   mediaDomains: Map[Host, Int],
-  emojis: Map[String, Int]
+  emojis: Map[String, Int],
+  languages: Map[Locale, Int]
 )
 
 object TweetStats {
@@ -35,9 +38,11 @@ object TweetStats {
       domains = countUnique(tweet.urls.flatMap(_.host)),
       mediaTypes = countUnique(tweet.mediaUrls.map(_.mediaType)),
       mediaDomains = countUnique(tweet.mediaUrls.flatMap(_.url.host)),
-      emojis = countUnique(emojis)
+      emojis = countUnique(emojis),
+      languages = tweet.language.map(l => Map(l -> 1)).getOrElse(Map.empty)
     )
   }
 
+  1 |+| 1 // intellij marks cats.implicits as unused, but its needed for Monoid[Map[Locale, Int]]
   implicit val monoidStats: Monoid[TweetStats] = derived.semi.monoid
 }

@@ -2,6 +2,7 @@ package twitterstats
 
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 import cats.effect.ConcurrentEffect
 import cats.implicits._
@@ -24,7 +25,7 @@ class Twitter[F[_]: ConcurrentEffect] {
     client <- BlazeClientBuilder[F](global).stream
     tweetReq <- Stream.eval(request)
     tweetRes <- client.stream(tweetReq)
-    tweetJson <- tweetRes.body.chunks.parseJsonStream
+    tweetJson <- tweetRes.body.chunks.parseJsonStream.filter(!_.asString.contains("delete"))
   } yield tweetJson
 }
 
@@ -34,7 +35,8 @@ object Twitter extends AutoDerivation {
     text: String,
     hashtags: List[String],
     urls: List[Uri],
-    mediaUrls: List[MediaUrl]
+    mediaUrls: List[MediaUrl],
+    language: Option[Locale]
   )
 
   sealed trait TweetMedia
@@ -98,7 +100,8 @@ object Twitter extends AutoDerivation {
           hashtags = preferred(_.entities.hashtags, _.entities.hashtags).map(_.text),
           urls = preferred(_.entities.urls, _.entities.urls).map(_.expanded_url),
           mediaUrls = preferred(_.extended_entities, _.extended_entities)
-            .map(_.media).sequence.flatten.map(m => MediaUrl(m.media_url, m.`type`))
+            .map(_.media).sequence.flatten.map(m => MediaUrl(m.media_url, m.`type`)),
+          language = fromJson.lang.filterNot(_ == "und").map(Locale.forLanguageTag)
         )
       }
     )
@@ -142,6 +145,7 @@ object Twitter extends AutoDerivation {
       entities: Entities,
       extended_entities: Option[ExtendedEntities],
       extended_tweet: Option[ExtendedTweet],
+      lang: Option[String]
     )
   }
 }

@@ -2,6 +2,7 @@ package twitterstats
 
 import java.time.ZonedDateTime
 import java.time.temporal.ChronoUnit
+import java.util.Locale
 
 import cats.effect._
 import fs2.concurrent.Signal
@@ -27,7 +28,8 @@ class TwitterStatsApi(tweetSignal: Signal[IO, WindowedSum[TweetStats]]) extends 
   object SecondsQueryParamDecoderMatcher extends QueryParamDecoderMatcher[Seconds]("seconds")
   object ListLimitQueryParam extends OptionalQueryParamDecoderMatcher[Int]("listLimit")
 
-  implicit val hostKey: Encoder[Host] = Encoder[String].contramap(_.value)
+  implicit val hostEncoder: Encoder[Host] = Encoder[String].contramap(_.value)
+  implicit val languageEncoder: Encoder[Locale] = Encoder[String].contramap(_.getDisplayLanguage)
 
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
     case GET -> Root / "twitterStats" :? SecondsQueryParamDecoderMatcher(seconds) +& ListLimitQueryParam(limit) =>
@@ -69,6 +71,7 @@ class TwitterStatsApi(tweetSignal: Signal[IO, WindowedSum[TweetStats]]) extends 
       percentWithEmojis = percent(stats.tweetsWithEmojis),
       firstTweetInWindow = window.firstTimestamp,
       lastTweetInWindow = window.lastTimestamp,
+      languages = sortCount(stats.languages)
     )
   }
 }
@@ -93,6 +96,7 @@ object EncodingTarget {
     mediaTypes: List[Count[TweetMedia]],
     mediaDomains: List[Count[Host]],
     emojis: List[Count[String]],
+    languages: List[Count[Locale]]
   )
 
 }
