@@ -1,30 +1,38 @@
 # twitter-stats
-
+​
+### Run
+​
 To run, the following command line arguments are required:
 ```
---apiKey foo
---apiSecretKey bar
---accessToken baz
+--apiKey foo 
+--apiSecretKey bar 
+--accessToken baz 
 --accessTokenSecret qux
 ```
 
-Once running, read statistics at http://localhost:8080/twitterStats?seconds=600&list_limit=10
+### Statistics
+​
+Once running, a service will spawn providing tweet statistics:
+​
 
+http://localhost:8080/twitterStats?seconds=600&listLimit=10
+
+​
 The following statistics are provided for the requested time window:
-
-* number of tweets 
-* hashtags
-  * count of each hashtag seen
-* urls
-  * count of each domain seen
-  * number of tweets with a URL
-  * percentage of  tweets with a URL
-* emojis
-  * count of each emoji seen
-  * number of tweets with an emoji
-  * percentage of tweets with an emoji
-
+​
+* Number of tweets 
+* Hashtags
+  * Count of each hashtag seen
+* URLs
+  * Count of each domain seen
+  * Number of tweets with a URL
+  * Percentage of  tweets with a URL
+* Emojis
+  * Count of each emoji seen
+  * Number of tweets with an emoji
+  * Percentage of tweets with an emoji
+​
 Additionally, the following fields are provided to indicate the actual time window that was used:
-* seconds elapsed
-* timestamp of the earliest tweet in the window
-* timestmap of the latest tweet in the window
+* Seconds elapsed
+* Timestamp of the earliest tweet in the window
+* Timestamp of the latest tweet in the window

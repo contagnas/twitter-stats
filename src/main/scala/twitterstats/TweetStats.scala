@@ -21,21 +21,21 @@ case class TweetStats(
 )
 
 object TweetStats {
-  private def count[A](as: Iterable[A]): Map[A, Int] = as.groupBy(identity)
+  private def countUnique[A](as: Iterable[A]): Map[A, Int] = as.groupBy(identity)
     .map { case (k, vs) => k -> vs.size }
 
   def of(tweet: Tweet): TweetStats = {
     val emojis = EmojiParser.extractEmojis(tweet.text).asScala
     TweetStats(
       count = 1,
-      hashtags = count(tweet.hashtags),
+      hashtags = countUnique(tweet.hashtags),
       tweetsWithUrls = if (tweet.urls.nonEmpty) 1 else 0,
       tweetsWithPhotos = if (tweet.mediaUrls.exists(_.mediaType == TweetMedia.Photo)) 1 else 0,
       tweetsWithEmojis = if (emojis.nonEmpty) 1 else 0,
-      domains = count(tweet.urls.flatMap(_.host)),
-      mediaTypes = count(tweet.mediaUrls.map(_.mediaType)),
-      mediaDomains = count(tweet.mediaUrls.flatMap(_.url.host)),
-      emojis = count(emojis)
+      domains = countUnique(tweet.urls.flatMap(_.host)),
+      mediaTypes = countUnique(tweet.mediaUrls.map(_.mediaType)),
+      mediaDomains = countUnique(tweet.mediaUrls.flatMap(_.url.host)),
+      emojis = countUnique(emojis)
     )
   }
 

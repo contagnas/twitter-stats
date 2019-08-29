@@ -22,10 +22,10 @@ class Twitter[F[_]: ConcurrentEffect] {
 
   def tweetStream(request: F[Request[F]]): Stream[F, Json] = for {
     client <- BlazeClientBuilder[F](global).stream
-    req <- Stream.eval(request)
-    rawTweet <- client.stream(req)
-    tweet <- rawTweet.body.chunks.parseJsonStream
-  } yield tweet
+    tweetReq <- Stream.eval(request)
+    tweetRes <- client.stream(tweetReq)
+    tweetJson <- tweetRes.body.chunks.parseJsonStream
+  } yield tweetJson
 }
 
 object Twitter extends AutoDerivation {
@@ -91,12 +91,13 @@ object Twitter extends AutoDerivation {
 
     json.as[RawTweet].map(
       fromJson => {
+        def preferred[A] = preferExtended(fromJson)(_: ExtendedTweet => A, _: RawTweet => A)
         Tweet(
           timestamp = fromJson.created_at,
-          text = preferExtended(fromJson)(_.full_text, _.text),
-          hashtags = preferExtended(fromJson)(_.entities.hashtags, _.entities.hashtags).map(_.text),
-          urls = preferExtended(fromJson)(_.entities.urls, _.entities.urls).map(_.expanded_url),
-          mediaUrls = preferExtended(fromJson)(_.extended_entities, _.extended_entities)
+          text = preferred(_.full_text, _.text),
+          hashtags = preferred(_.entities.hashtags, _.entities.hashtags).map(_.text),
+          urls = preferred(_.entities.urls, _.entities.urls).map(_.expanded_url),
+          mediaUrls = preferred(_.extended_entities, _.extended_entities)
             .map(_.media).sequence.flatten.map(m => MediaUrl(m.media_url, m.`type`))
         )
       }

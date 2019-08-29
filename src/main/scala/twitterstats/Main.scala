@@ -41,10 +41,10 @@ private object Main extends IOApp {
 
     val request = oauth1.signRequest[IO](
       req = Request(uri = config.statusUri),
-      consumer = config.consumer,
+      consumer = config.authConsumer,
       callback = None,
       verifier = None,
-      token = Some(config.token)
+      token = Some(config.authToken)
     )
 
     val program = for {

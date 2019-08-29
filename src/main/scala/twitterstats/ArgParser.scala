@@ -8,8 +8,8 @@ import scala.annotation.tailrec
 
 object ArgParser {
   case class Config(
-    token: Token,
-    consumer: Consumer,
+    authToken: Token,
+    authConsumer: Consumer,
     statusUri: Uri
   )
 
@@ -22,8 +22,8 @@ object ArgParser {
       statusUri: Uri = uri"""https://stream.twitter.com/1.1/statuses/sample.json"""
     ) {
       def toConfig = Config(
-        consumer = Consumer(apiKey.get, apiSecretKey.get),
-        token = Token(accessToken.get, accessTokenSecret.get),
+        authConsumer = Consumer(apiKey.get, apiSecretKey.get),
+        authToken = Token(accessToken.get, accessTokenSecret.get),
         statusUri = statusUri
       )
     }
